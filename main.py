@@ -13,8 +13,8 @@ SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
 KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 
-# --- ЄДИНИЙ СЕРВЕР, ЯКИЙ ПРАЦЮЄ ---
-API_URL = "https://eu1-developer.deyecloud.com"
+# Б'ємо напряму в глобальний бекенд Solarman, щоб уникнути помилок шлюзу Deye
+API_URL = "https://globalapi.solarmanpv.com"
 # -------------------------
 
 def send_telegram_message(text):
@@ -27,14 +27,14 @@ def send_telegram_message(text):
         print(f"Помилка відправки в Telegram: {e}")
 
 def get_battery_soc():
-    """Отримує заряд акумулятора з Deye Cloud"""
+    """Отримує заряд акумулятора з Solarman/Deye Cloud"""
     if not SOLARMAN_PASSWORD:
-        print("Помилка: Не задано пароль від Deye (SOLARMAN_PASSWORD)")
+        print("Помилка: Не задано пароль від додатку (SOLARMAN_PASSWORD)")
         return "OFFLINE"
 
     pwd_hash = hashlib.sha256(SOLARMAN_PASSWORD.encode('utf-8')).hexdigest()
     
-    # Правильний шлях авторизації
+    # Стандартний шлях авторизації
     auth_url = f"{API_URL}/account/v1.0/token?appId={SOLARMAN_APP_ID}"
     auth_payload = {
         "appSecret": SOLARMAN_APP_SECRET, 
@@ -50,10 +50,10 @@ def get_battery_soc():
             
         token = auth_res.get("access_token", auth_res.get("accessToken", ""))
         
-        # Правильний шлях отримання даних
+        # Стандартний шлях отримання даних пристрою
         data_url = f"{API_URL}/device/v1.0/currentData?appId={SOLARMAN_APP_ID}&language=en"
         headers = {
-            "Authorization": f"Bearer {token}", 
+            "Authorization": f"bearer {token}", 
             "Content-Type": "application/json"
         }
         data_payload = {"deviceSn": DEVICE_SN}
