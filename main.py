@@ -110,7 +110,6 @@ def set_current_state(state):
 # ------------------------------------------------
 
 def main():
-    def main():
     soc = 90  # ТИМЧАСОВИЙ ТЕСТ
     current_state = get_current_state()
 
@@ -150,3 +149,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
