@@ -13,7 +13,7 @@ SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
 KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 
-# Точний URL з твого скріншота
+# Точний URL
 API_URL = "https://eu1-developer.deyecloud.com"
 # -------------------------
 
@@ -27,13 +27,13 @@ def send_telegram_message(text):
         print(f"Помилка відправки в Telegram: {e}")
 
 def get_battery_soc():
-    """Отримує заряд акумулятора згідно з офіційною документацією Deye Cloud"""
+    """Отримує заряд акумулятора через новий ендпоінт /device/latest"""
     if not SOLARMAN_PASSWORD:
         return "OFFLINE"
 
     pwd_hash = hashlib.sha256(SOLARMAN_PASSWORD.encode('utf-8')).hexdigest()
     
-    # 1. Авторизація (згідно зі скріншотом 3)
+    # 1. Авторизація
     auth_url = f"{API_URL}/v1.0/account/token?appId={SOLARMAN_APP_ID}"
     auth_payload = {
         "appSecret": SOLARMAN_APP_SECRET, 
@@ -48,37 +48,55 @@ def get_battery_soc():
             print("Помилка авторизації:", auth_res)
             return "OFFLINE"
             
-        # Отримуємо токен (він вже містить слово Bearer згідно з доками)
         token = auth_res.get("accessToken", "")
-        
         if not token:
             print("Помилка: Токен не знайдено!")
             return "OFFLINE"
             
-        # 2. Отримання даних
-        data_url = f"{API_URL}/v1.0/device/currentData?appId={SOLARMAN_APP_ID}"
+        # 2. Отримання даних - НОВИЙ ШЛЯХ /device/latest
+        data_url = f"{API_URL}/v1.0/device/latest?appId={SOLARMAN_APP_ID}"
         
-        # ВИПРАВЛЕННЯ: якщо токен вже має "Bearer", не додаємо його вдруге!
+        # Перевірка Bearer
         auth_header = token if token.lower().startswith("bearer") else f"Bearer {token}"
         
-        # Заголовок authorization (згідно зі скріншотом 4)
         headers = {
             "Authorization": auth_header,
             "Content-Type": "application/json"
         }
-        data_payload = {"deviceSn": DEVICE_SN}
+        
+        # НОВИЙ ФОРМАТ ЗАПИТУ (deviceList замість deviceSn)
+        data_payload = {
+            "deviceList": [DEVICE_SN]
+        }
         
         data_res = requests.post(data_url, headers=headers, json=data_payload, timeout=10).json()
         
-        if str(data_res.get("deviceState", "")) == "2":
+        if not data_res.get("success"):
+            print("Помилка отримання даних:", data_res)
+            return "OFFLINE"
+            
+        device_data_list = data_res.get("deviceDataList", [])
+        if not device_data_list:
+            print("Сервер не повернув даних для цього інвертора.")
+            return "OFFLINE"
+            
+        # Беремо дані першого (і єдиного) інвертора зі списку
+        device_data = device_data_list[0]
+        
+        if str(device_data.get("deviceState", "")) == "2":
+            print("Інвертор не в мережі (deviceState=2)")
             return "OFFLINE"
 
         # Витягуємо SOC
-        for item in data_res.get("dataList", []):
-            if item.get("key", "").upper() in ["SOC", "BATTERY_SOC", "BATTERY CAPACITY", "BMS_SOC"]:
+        for item in device_data.get("dataList", []):
+            key = str(item.get("key", "")).upper()
+            if key in ["SOC", "BATTERY_SOC", "BATTERY CAPACITY", "BMS_SOC"]:
                 return float(item.get("value", 100))
         
-        print("Не знайдено параметр SOC. Повна відповідь:", data_res)
+        # Якщо підключились, але ключа немає — виводимо всі ключі в лог для перевірки
+        keys_found = [i.get("key") for i in device_data.get("dataList", [])]
+        print("Не знайдено параметр SOC. Ось які параметри віддав інвертор:")
+        print(keys_found)
         return "OFFLINE"
                 
     except Exception as e:
