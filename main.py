@@ -14,7 +14,7 @@ DEVICE_SN = os.environ.get("DEVICE_SN")
 KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 
 # Офіційний API шлюз Deye
-API_URL = "https://openapi.deyecloud.com"
+API_URL = "https://euopenapi.deyecloud.com"
 # Якщо раптом знову буде NameResolutionError, зміни на "https://euopenapi.deyecloud.com"
 
 # -------------------------
