@@ -110,8 +110,8 @@ def set_current_state(state):
 # ------------------------------------------------
 
 def main():
+    def main():
     soc = 90  # ТИМЧАСОВИЙ ТЕСТ
-    soc = get_battery_soc()
     current_state = get_current_state()
 
     print(f"Отримано SOC: {soc}, Поточний стан: {current_state}")
