@@ -13,7 +13,7 @@ SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
 KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 
-API_URL = "https://api.deyecloud.com"
+API_URL = "https://eu1-developer.deyecloud.com"
 # -------------------------
 
 def send_telegram_message(text):
@@ -26,7 +26,9 @@ def send_telegram_message(text):
 
 def get_battery_soc():
     pwd_hash = hashlib.sha256(SOLARMAN_PASSWORD.encode('utf-8')).hexdigest()
-    auth_url = f"{API_URL}/account/v1.0/token?appId={SOLARMAN_APP_ID}"
+    
+    # 1. Отримуємо токен (оновлений шлях /v1.0/account/token)
+    auth_url = f"{API_URL}/v1.0/account/token?appId={SOLARMAN_APP_ID}"
     auth_payload = {"appSecret": SOLARMAN_APP_SECRET, "email": SOLARMAN_EMAIL, "password": pwd_hash}
     
     try:
@@ -35,9 +37,11 @@ def get_battery_soc():
             print("Помилка авторизації:", auth_res)
             return "OFFLINE"
             
-        token = auth_res["access_token"]
-        data_url = f"{API_URL}/device/v1.0/currentData?appId={SOLARMAN_APP_ID}&language=en"
-        headers = {"Authorization": f"Bearer {token}"}
+        token = auth_res["accessToken"] # У Deye API ключ часто називається accessToken замість access_token
+        
+        # 2. Отримуємо дані інвертора (оновлений шлях /v1.0/device/currentData)
+        data_url = f"{API_URL}/v1.0/device/currentData?appId={SOLARMAN_APP_ID}&language=en"
+        headers = {"Token": token, "Content-Type": "application/json"} # Deye інколи вимагає токен у заголовку Token
         data_payload = {"deviceSn": DEVICE_SN}
         
         data_res = requests.post(data_url, headers=headers, json=data_payload, timeout=10).json()
@@ -45,9 +49,13 @@ def get_battery_soc():
         if str(data_res.get("deviceState", "")) == "2":
             return "OFFLINE"
 
+        # Шукаємо заряд батареї у відповіді
         for item in data_res.get("dataList", []):
-            if item.get("key", "").upper() in ["SOC", "BATTERY_SOC", "BATTERY CAPACITY"]:
+            if item.get("key", "").upper() in ["SOC", "BATTERY_SOC", "BATTERY CAPACITY", "BMS_SOC"]:
                 return float(item.get("value", 100))
+        
+        # Якщо підключились, але ключа SOC немає, виводимо відповідь для діагностики
+        print("Не знайдено параметр SOC у відповіді:", data_res)
         return "OFFLINE"
                 
     except Exception as e:
