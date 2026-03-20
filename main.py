@@ -13,10 +13,14 @@ SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
 KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 
-API_URL = "https://eu1-developer.deyecloud.com"
+# Офіційний API шлюз Deye
+API_URL = "https://openapi.deyecloud.com"
+# Якщо раптом знову буде NameResolutionError, зміни на "https://euopenapi.deyecloud.com"
+
 # -------------------------
 
 def send_telegram_message(text):
+    """Відправляє повідомлення у Telegram"""
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML"}
     try:
@@ -25,10 +29,20 @@ def send_telegram_message(text):
         print(f"Помилка відправки в Telegram: {e}")
 
 def get_battery_soc():
+    """Отримує заряд акумулятора з Deye Cloud"""
+    if not SOLARMAN_PASSWORD:
+        print("Помилка: Не задано пароль від Deye (SOLARMAN_PASSWORD)")
+        return "OFFLINE"
+
     pwd_hash = hashlib.sha256(SOLARMAN_PASSWORD.encode('utf-8')).hexdigest()
     
-    auth_url = f"{API_URL}/v1.0/account/token?appId={SOLARMAN_APP_ID}"
-    auth_payload = {"appSecret": SOLARMAN_APP_SECRET, "email": SOLARMAN_EMAIL, "password": pwd_hash}
+    # 1. Отримуємо токен
+    auth_url = f"{API_URL}/account/v1.0/token?appId={SOLARMAN_APP_ID}"
+    auth_payload = {
+        "appSecret": SOLARMAN_APP_SECRET, 
+        "email": SOLARMAN_EMAIL, 
+        "password": pwd_hash
+    }
     
     try:
         auth_res = requests.post(auth_url, json=auth_payload, timeout=10).json()
@@ -36,14 +50,12 @@ def get_battery_soc():
             print("Помилка авторизації:", auth_res)
             return "OFFLINE"
             
-        # Підстраховка: беремо токен незалежно від того, як Deye його назвав
         token = auth_res.get("access_token", auth_res.get("accessToken", ""))
         
-        data_url = f"{API_URL}/v1.0/device/currentData?appId={SOLARMAN_APP_ID}&language=en"
-        
-        # ВИПРАВЛЕНО: Deye вимагає заголовок Authorization та слово bearer перед токеном
+        # 2. Отримуємо дані інвертора
+        data_url = f"{API_URL}/device/v1.0/currentData?appId={SOLARMAN_APP_ID}&language=en"
         headers = {
-            "Authorization": f"bearer {token}", 
+            "Authorization": f"Bearer {token}", 
             "Content-Type": "application/json"
         }
         data_payload = {"deviceSn": DEVICE_SN}
@@ -53,6 +65,7 @@ def get_battery_soc():
         if str(data_res.get("deviceState", "")) == "2":
             return "OFFLINE"
 
+        # 3. Шукаємо параметр заряду
         for item in data_res.get("dataList", []):
             if item.get("key", "").upper() in ["SOC", "BATTERY_SOC", "BATTERY CAPACITY", "BMS_SOC"]:
                 return float(item.get("value", 100))
@@ -64,8 +77,9 @@ def get_battery_soc():
         print(f"Помилка з'єднання з API: {e}")
         return "OFFLINE"
 
-# --- НОВА ЛОГІКА ЗБЕРЕЖЕННЯ СТАНУ ЧЕРЕЗ ХМАРУ ---
+# --- ЛОГІКА ЗБЕРЕЖЕННЯ СТАНУ ЧЕРЕЗ ХМАРУ KVDB ---
 def get_current_state():
+    """Отримує попередній стан з kvdb.io"""
     if not KVDB_BUCKET: return 0
     url = f"https://kvdb.io/{KVDB_BUCKET}/elevator_state"
     try:
@@ -77,6 +91,7 @@ def get_current_state():
     return 0
 
 def set_current_state(state):
+    """Зберігає новий стан у kvdb.io"""
     if not KVDB_BUCKET: return
     url = f"https://kvdb.io/{KVDB_BUCKET}/elevator_state"
     try:
