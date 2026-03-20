@@ -1,0 +1,35 @@
+name: Check Elevator Battery
+
+on:
+  schedule:
+    # Запуск кожні 10 хвилин
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Дозволяє запустити скрипт вручну кнопкою
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: pip install requests
+
+    - name: Run battery check script
+      env:
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        SOLARMAN_APP_ID: ${{ secrets.SOLARMAN_APP_ID }}
+        SOLARMAN_APP_SECRET: ${{ secrets.SOLARMAN_APP_SECRET }}
+        SOLARMAN_EMAIL: ${{ secrets.SOLARMAN_EMAIL }}
+        SOLARMAN_PASSWORD: ${{ secrets.SOLARMAN_PASSWORD }}
+        DEVICE_SN: ${{ secrets.DEVICE_SN }}
+        KVDB_BUCKET: ${{ secrets.KVDB_BUCKET }}
+      run: python main.py
