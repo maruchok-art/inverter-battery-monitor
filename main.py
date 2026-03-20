@@ -13,10 +13,8 @@ SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
 KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 
-# Офіційний API шлюз Deye
-API_URL = "https://euopenapi.deyecloud.com"
-# Якщо раптом знову буде NameResolutionError, зміни на "https://euopenapi.deyecloud.com"
-
+# --- ЄДИНИЙ СЕРВЕР, ЯКИЙ ПРАЦЮЄ ---
+API_URL = "https://eu1-developer.deyecloud.com"
 # -------------------------
 
 def send_telegram_message(text):
@@ -36,7 +34,7 @@ def get_battery_soc():
 
     pwd_hash = hashlib.sha256(SOLARMAN_PASSWORD.encode('utf-8')).hexdigest()
     
-    # 1. Отримуємо токен
+    # Правильний шлях авторизації
     auth_url = f"{API_URL}/account/v1.0/token?appId={SOLARMAN_APP_ID}"
     auth_payload = {
         "appSecret": SOLARMAN_APP_SECRET, 
@@ -52,7 +50,7 @@ def get_battery_soc():
             
         token = auth_res.get("access_token", auth_res.get("accessToken", ""))
         
-        # 2. Отримуємо дані інвертора
+        # Правильний шлях отримання даних
         data_url = f"{API_URL}/device/v1.0/currentData?appId={SOLARMAN_APP_ID}&language=en"
         headers = {
             "Authorization": f"Bearer {token}", 
@@ -65,7 +63,7 @@ def get_battery_soc():
         if str(data_res.get("deviceState", "")) == "2":
             return "OFFLINE"
 
-        # 3. Шукаємо параметр заряду
+        # Шукаємо параметр заряду у відповіді
         for item in data_res.get("dataList", []):
             if item.get("key", "").upper() in ["SOC", "BATTERY_SOC", "BATTERY CAPACITY", "BMS_SOC"]:
                 return float(item.get("value", 100))
