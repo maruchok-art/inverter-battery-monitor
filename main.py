@@ -34,9 +34,9 @@ def send_telegram_message(text, silent=False):
     except Exception as e:
         logging.error(f"Помилка відправки в Telegram: {e}")
 
-# --- БЕЗПЕЧНА РОБОТА З БАЗОЮ ДАНИХ (З ПОВТОРНИМИ СПРОБАМИ) ---
+# --- БЕЗПЕЧНА РОБОТА З БАЗОЮ ДАНИХ ---
 def get_state():
-    """Отримує словник стану з KVDB. Якщо помилка - робить кілька спроб."""
+    """Отримує словник стану з KVDB."""
     default_state = {
         "state": 0, 
         "token": "", 
@@ -53,31 +53,38 @@ def get_state():
             res = requests.get(url, timeout=10)
             if res.status_code == 200:
                 return json.loads(res.text)
-            if res.status_code == 404: # База ще порожня
+            if res.status_code == 404: 
                 return default_state
-            res.raise_for_status() # Жорстко реагуємо на помилки сервера (500, 502)
+            res.raise_for_status() 
         except Exception as e:
-            logging.warning(f"KVDB не відповідає (спроба {attempt+1}/3). Помилка: {e}")
+            logging.warning(f"KVDB не відповідає при читанні (спроба {attempt+1}/3). Помилка: {e}")
         time.sleep(3)
         
     logging.error("KVDB повністю недоступна. Вмикаємо режим 'Мовчання'.")
-    default_state["state"] = -1 # Спеціальний стан-запобіжник
+    default_state["state"] = -1 
     return default_state
 
 def save_state(state_dict):
-    """Зберігає словник стану у KVDB з повторними спробами."""
+    """Зберігає словник стану у KVDB (ВИПРАВЛЕНО)"""
     if not KVDB_BUCKET: return
     if state_dict.get("state") == -1: return 
     
     url = f"https://kvdb.io/{KVDB_BUCKET}/elevator_state_v2"
+    # Перетворюємо словник у звичайний текстовий рядок, як любить kvdb
+    payload = json.dumps(state_dict) 
+    
     for attempt in range(3):
         try:
-            res = requests.post(url, json=state_dict, timeout=10)
-            res.raise_for_status() # Перевіряємо, чи сервер точно прийняв запис
+            # Використовуємо data= замість json=
+            res = requests.post(url, data=payload, timeout=10)
+            res.raise_for_status() 
+            logging.info("Пам'ять бота успішно оновлено та збережено!") # Тепер ми це побачимо!
             return
         except Exception as e:
-            pass
+            # Більше ніякого мовчання. Тепер ми бачимо помилки!
+            logging.warning(f"Помилка запису в KVDB (спроба {attempt+1}/3): {e}")
         time.sleep(3)
+    logging.error("КРИТИЧНО: Не вдалося зберегти стан у KVDB після 3 спроб.")
 
 # --- ЛОГІКА API DEYE ---
 def fetch_new_token():
@@ -113,7 +120,6 @@ def fetch_soc_data(token):
         device_data = data_list[0]
         if str(device_data.get("deviceState", "")) == "2": return None
             
-        # ВИПРАВЛЕНИЙ ПОШУК: Тільки реальні відсотки, без ємності (Ah)
         for item in device_data.get("dataList", []):
             key = str(item.get("key", "")).upper()
             if key in ["SOC", "BATTERY_SOC", "BMS_SOC"]:
@@ -159,7 +165,6 @@ def main():
     soc = get_battery_soc_with_retry(state)
     logging.info(f"Отримано SOC: {soc}, Поточний рівень тривоги: {current_state_level}")
 
-    # ЗАХИСТ ВІД ДУБЛІВ: Якщо база даних відвалилася, нічого не пишемо в канал!
     if current_state_level == -1:
         logging.warning("Пропуск логіки сповіщень через помилку бази даних (захист від спаму).")
         return
