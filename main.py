@@ -21,14 +21,8 @@ KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 API_URL = "https://eu1-developer.deyecloud.com"
 
 def send_telegram_message(text, silent=False):
-    """Відправляє повідомлення у Telegram"""
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TG_CHAT_ID, 
-        "text": text, 
-        "parse_mode": "HTML",
-        "disable_notification": silent
-    }
+    payload = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML", "disable_notification": silent}
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
@@ -36,21 +30,16 @@ def send_telegram_message(text, silent=False):
 
 # --- БЕЗПЕЧНА РОБОТА З БАЗОЮ ДАНИХ ---
 def get_state():
-    """Отримує словник стану з KVDB."""
-    default_state = {
-        "state": 0, 
-        "token": "", 
-        "token_time": 0,
-        "last_soc": 100.0,
-        "last_soc_time": time.time()
-    }
+    default_state = {"state": 0, "token": "", "token_time": 0, "last_soc": 100.0, "last_soc_time": time.time()}
     if not KVDB_BUCKET: return default_state
     
-    url = f"https://kvdb.io/{KVDB_BUCKET}/elevator_state_v2"
+    clean_bucket = KVDB_BUCKET.strip() # ВИДАЛЯЄМО ВИПАДКОВІ ПРОБІЛИ З КЛЮЧА
+    url = f"https://kvdb.io/{clean_bucket}/elevator_state_v2"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"} # МАСКУЄМОСЯ ПІД БРАУЗЕР
     
     for attempt in range(3):
         try:
-            res = requests.get(url, timeout=10)
+            res = requests.get(url, headers=headers, timeout=10)
             if res.status_code == 200:
                 return json.loads(res.text)
             if res.status_code == 404: 
@@ -65,23 +54,24 @@ def get_state():
     return default_state
 
 def save_state(state_dict):
-    """Зберігає словник стану у KVDB (ВИПРАВЛЕНО)"""
     if not KVDB_BUCKET: return
     if state_dict.get("state") == -1: return 
     
-    url = f"https://kvdb.io/{KVDB_BUCKET}/elevator_state_v2"
-    # Перетворюємо словник у звичайний текстовий рядок, як любить kvdb
+    clean_bucket = KVDB_BUCKET.strip() # ВИДАЛЯЄМО ВИПАДКОВІ ПРОБІЛИ З КЛЮЧА
+    url = f"https://kvdb.io/{clean_bucket}/elevator_state_v2"
     payload = json.dumps(state_dict) 
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" # МАСКУЄМОСЯ ПІД БРАУЗЕР
+    }
     
     for attempt in range(3):
         try:
-            # Використовуємо data= замість json=
-            res = requests.post(url, data=payload, timeout=10)
+            res = requests.post(url, data=payload, headers=headers, timeout=10)
             res.raise_for_status() 
-            logging.info("Пам'ять бота успішно оновлено та збережено!") # Тепер ми це побачимо!
+            logging.info("Пам'ять бота успішно оновлено та збережено!")
             return
         except Exception as e:
-            # Більше ніякого мовчання. Тепер ми бачимо помилки!
             logging.warning(f"Помилка запису в KVDB (спроба {attempt+1}/3): {e}")
         time.sleep(3)
     logging.error("КРИТИЧНО: Не вдалося зберегти стан у KVDB після 3 спроб.")
@@ -124,7 +114,6 @@ def fetch_soc_data(token):
             key = str(item.get("key", "")).upper()
             if key in ["SOC", "BATTERY_SOC", "BMS_SOC"]:
                 return float(item.get("value", 100))
-                
         return None
     except Exception as e:
         logging.error(f"Помилка запиту даних: {e}")
