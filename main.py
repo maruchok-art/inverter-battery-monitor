@@ -16,9 +16,12 @@ SOLARMAN_APP_SECRET = os.environ.get("SOLARMAN_APP_SECRET")
 SOLARMAN_EMAIL = os.environ.get("SOLARMAN_EMAIL")
 SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
-KVDB_BUCKET = os.environ.get("KVDB_BUCKET")
 
 API_URL = "https://eu1-developer.deyecloud.com"
+
+# ТВОЯ НОВА НАДІЙНА БАЗА ДАНИХ
+JSONBLOB_ID = "019d1fde-f71e-7530-83fb-a58fe38ac1c7"
+STORAGE_URL = f"https://jsonblob.com/api/jsonBlob/{JSONBLOB_ID}"
 
 def send_telegram_message(text, silent=False):
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
@@ -28,53 +31,33 @@ def send_telegram_message(text, silent=False):
     except Exception as e:
         logging.error(f"Помилка відправки в Telegram: {e}")
 
-# --- БЕЗПЕЧНА РОБОТА З БАЗОЮ ДАНИХ ---
+# --- РОБОТА З НОВОЮ БАЗОЮ JSONBLOB ---
 def get_state():
     default_state = {"state": 0, "token": "", "token_time": 0, "last_soc": 100.0, "last_soc_time": time.time()}
-    if not KVDB_BUCKET: return default_state
-    
-    clean_bucket = KVDB_BUCKET.strip() # ВИДАЛЯЄМО ВИПАДКОВІ ПРОБІЛИ З КЛЮЧА
-    url = f"https://kvdb.io/{clean_bucket}/elevator_state_v2"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"} # МАСКУЄМОСЯ ПІД БРАУЗЕР
-    
-    for attempt in range(3):
-        try:
-            res = requests.get(url, headers=headers, timeout=10)
-            if res.status_code == 200:
-                return json.loads(res.text)
-            if res.status_code == 404: 
+    try:
+        res = requests.get(STORAGE_URL, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            # Якщо база зовсім порожня {}, підставляємо значення за замовчуванням
+            if not data:
                 return default_state
-            res.raise_for_status() 
-        except Exception as e:
-            logging.warning(f"KVDB не відповідає при читанні (спроба {attempt+1}/3). Помилка: {e}")
-        time.sleep(3)
-        
-    logging.error("KVDB повністю недоступна. Вмикаємо режим 'Мовчання'.")
-    default_state["state"] = -1 
+            return data
+    except Exception as e:
+        logging.warning(f"Помилка читання JSONBlob: {e}")
     return default_state
 
 def save_state(state_dict):
-    if not KVDB_BUCKET: return
-    if state_dict.get("state") == -1: return 
-    
-    clean_bucket = KVDB_BUCKET.strip() # ВИДАЛЯЄМО ВИПАДКОВІ ПРОБІЛИ З КЛЮЧА
-    url = f"https://kvdb.io/{clean_bucket}/elevator_state_v2"
-    payload = json.dumps(state_dict) 
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" # МАСКУЄМОСЯ ПІД БРАУЗЕР
-    }
-    
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
     for attempt in range(3):
         try:
-            res = requests.post(url, data=payload, headers=headers, timeout=10)
+            res = requests.put(STORAGE_URL, json=state_dict, headers=headers, timeout=10)
             res.raise_for_status() 
-            logging.info("Пам'ять бота успішно оновлено та збережено!")
+            logging.info("Пам'ять бота успішно оновлено та збережено в JSONBlob!")
             return
         except Exception as e:
-            logging.warning(f"Помилка запису в KVDB (спроба {attempt+1}/3): {e}")
+            logging.warning(f"Помилка запису в JSONBlob (спроба {attempt+1}/3): {e}")
         time.sleep(3)
-    logging.error("КРИТИЧНО: Не вдалося зберегти стан у KVDB після 3 спроб.")
+    logging.error("КРИТИЧНО: Не вдалося зберегти стан.")
 
 # --- ЛОГІКА API DEYE ---
 def fetch_new_token():
@@ -100,10 +83,7 @@ def fetch_soc_data(token):
     try:
         res = requests.post(url, headers=headers, json=payload, timeout=10).json()
         if not res.get("success"):
-            code = str(res.get("code", ""))
-            if "2101" in code or code in ["1000001", "1000002"]: 
-                return "AUTH_ERROR"
-            return None
+            return "AUTH_ERROR"
             
         data_list = res.get("deviceDataList", [])
         if not data_list: return None
@@ -154,10 +134,6 @@ def main():
     soc = get_battery_soc_with_retry(state)
     logging.info(f"Отримано SOC: {soc}, Поточний рівень тривоги: {current_state_level}")
 
-    if current_state_level == -1:
-        logging.warning("Пропуск логіки сповіщень через помилку бази даних (захист від спаму).")
-        return
-
     if soc == "OFFLINE":
         if current_state_level != 4:
             msg = (f"⚠️ <b>Увага! Втрачено зв'язок з інвертором ліфта.</b>\n\n"
@@ -174,24 +150,4 @@ def main():
         send_telegram_message(msg, silent=False)
         state["state"] = 3
 
-    elif 30 < soc <= 50 and current_state_level not in [2, 3]:
-        msg = (f"🟠 <b>Заряд акумулятора ліфта: {soc}%</b>\n\n"
-               f"Запас ходу обмежений. Просимо максимально скоротити "
-               f"використання ліфта і за можливості йти сходами.")
-        send_telegram_message(msg, silent=False)
-        state["state"] = 2
-
-    elif 50 < soc <= 95 and current_state_level not in [1, 2, 3]:
-        msg = (f"🟡 <b>Увага! Ліфт працює від акумуляторів (Заряд: {soc}%).</b>\n\n"
-               f"Будь ласка, користуйтеся ним лише за крайньої потреби. Економте заряд!")
-        send_telegram_message(msg, silent=True) 
-        state["state"] = 1
-
-    elif soc > 95 and current_state_level > 0:
-        state["state"] = 0
-        logging.info("Батарея заряджена. Стан скинуто на 0 (тихо).")
-
-    save_state(state)
-
-if __name__ == "__main__":
-    main()
+    elif 30 < soc <=
