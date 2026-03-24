@@ -19,7 +19,7 @@ DEVICE_SN = os.environ.get("DEVICE_SN")
 
 API_URL = "https://eu1-developer.deyecloud.com"
 
-# ТВОЯ НОВА НАДІЙНА БАЗА ДАНИХ
+# НАДІЙНА БАЗА ДАНИХ JSONBLOB
 JSONBLOB_ID = "019d1fde-f71e-7530-83fb-a58fe38ac1c7"
 STORAGE_URL = f"https://jsonblob.com/api/jsonBlob/{JSONBLOB_ID}"
 
@@ -31,14 +31,13 @@ def send_telegram_message(text, silent=False):
     except Exception as e:
         logging.error(f"Помилка відправки в Telegram: {e}")
 
-# --- РОБОТА З НОВОЮ БАЗОЮ JSONBLOB ---
+# --- РОБОТА З БАЗОЮ JSONBLOB ---
 def get_state():
     default_state = {"state": 0, "token": "", "token_time": 0, "last_soc": 100.0, "last_soc_time": time.time()}
     try:
         res = requests.get(STORAGE_URL, timeout=10)
         if res.status_code == 200:
             data = res.json()
-            # Якщо база зовсім порожня {}, підставляємо значення за замовчуванням
             if not data:
                 return default_state
             return data
