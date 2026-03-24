@@ -150,4 +150,24 @@ def main():
         send_telegram_message(msg, silent=False)
         state["state"] = 3
 
-    elif 30 < soc <=
+    elif 30 < soc <= 50 and current_state_level not in [2, 3]:
+        msg = (f"🟠 <b>Заряд акумулятора ліфта: {soc}%</b>\n\n"
+               f"Запас ходу обмежений. Просимо максимально скоротити "
+               f"використання ліфта і за можливості йти сходами.")
+        send_telegram_message(msg, silent=False)
+        state["state"] = 2
+
+    elif 50 < soc <= 95 and current_state_level not in [1, 2, 3]:
+        msg = (f"🟡 <b>Увага! Ліфт працює від акумуляторів (Заряд: {soc}%).</b>\n\n"
+               f"Будь ласка, користуйтеся ним лише за крайньої потреби. Економте заряд!")
+        send_telegram_message(msg, silent=True) 
+        state["state"] = 1
+
+    elif soc > 95 and current_state_level > 0:
+        state["state"] = 0
+        logging.info("Батарея заряджена. Стан скинуто на 0 (тихо).")
+
+    save_state(state)
+
+if __name__ == "__main__":
+    main()
