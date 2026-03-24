@@ -31,5 +31,4 @@ jobs:
         SOLARMAN_EMAIL: ${{ secrets.SOLARMAN_EMAIL }}
         SOLARMAN_PASSWORD: ${{ secrets.SOLARMAN_PASSWORD }}
         DEVICE_SN: ${{ secrets.DEVICE_SN }}
-        KVDB_BUCKET: ${{ secrets.KVDB_BUCKET }}
       run: python main.py
