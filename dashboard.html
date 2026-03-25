@@ -165,7 +165,7 @@ async function loadData() {
   btn.disabled = true;
   document.getElementById("error").textContent = "";
   try {
-    const res = await fetch(URL, { headers: { Accept: "application/vnd.github+json", "Cache-Control": "no-cache" } });
+    const res = await fetch(`${URL}?nocache=${new Date().getTime()}`);
     if (!res.ok) throw new Error("HTTP " + res.status);
     const gist = await res.json();
     const data = JSON.parse(gist.files["state.json"].content);
