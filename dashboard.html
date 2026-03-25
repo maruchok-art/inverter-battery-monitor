@@ -148,8 +148,8 @@
 </div>
 
 <script>
-const JSONBLOB_ID = "019d2574-61f5-786f-a039-ea7ee37867a4";
-const URL = `https://corsproxy.io/?https://jsonblob.com/api/jsonBlob/${JSONBLOB_ID}`;
+const GIST_ID = "2c33101cb8478dde59acc26e25faf9b1";
+const URL = `https://api.github.com/gists/${GIST_ID}`;
 
 const STATES = {
   0: { label: "✅ Мережа, все добре",   cls: "status-ok",     color: "#4ade80" },
@@ -165,9 +165,10 @@ async function loadData() {
   btn.disabled = true;
   document.getElementById("error").textContent = "";
   try {
-    const res = await fetch(URL, { headers: { Accept: "application/json", "Cache-Control": "no-cache" } });
+    const res = await fetch(URL, { headers: { Accept: "application/vnd.github+json", "Cache-Control": "no-cache" } });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+    const gist = await res.json();
+    const data = JSON.parse(gist.files["state.json"].content);
 
     const soc   = data.last_soc ?? null;
     const st    = data.state ?? 0;
