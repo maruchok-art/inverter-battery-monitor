@@ -75,6 +75,7 @@ jobs:
           DEVICE_SN: ${{ secrets.DEVICE_SN }}
           JSONBLOB_ID: ${{ secrets.JSONBLOB_ID }}
         run: python main.py
+```
 
 ### 4. Веб-дашборд
 Файл `dashboard.html` можна розмістити на будь-якому безкоштовному хостингу (наприклад, **GitHub Pages**). 
