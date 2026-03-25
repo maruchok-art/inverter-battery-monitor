@@ -110,6 +110,7 @@
     transition: background 0.2s;
   }
   .refresh-btn:hover { background: #353849; color: #fff; }
+  .refresh-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
   .error { color: #f87171; font-size: 0.9rem; margin-top: 16px; }
 </style>
@@ -135,7 +136,7 @@
 
   <div class="meta" id="updated">Оновлення...</div>
 
-  <button class="refresh-btn" onclick="loadData()">↻ Оновити</button>
+  <button class="refresh-btn" id="refresh-btn" onclick="loadData()">↻ Оновити</button>
   <div class="error" id="error"></div>
 </div>
 
@@ -152,7 +153,7 @@ const STATES = {
 };
 
 async function loadData() {
-  const btn = document.querySelector(".refresh-btn");
+  const btn = document.getElementById("refresh-btn");
   btn.textContent = "⏳ Завантаження...";
   btn.disabled = true;
   document.getElementById("error").textContent = "";
