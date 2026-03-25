@@ -5,6 +5,8 @@ on:
     # Запуск кожні 10 хвилин
     - cron: '*/10 * * * *'
   workflow_dispatch: # Дозволяє запустити скрипт вручну кнопкою
+  repository_dispatch:
+    types: [trigger]
 
 jobs:
   run-bot:
