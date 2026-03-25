@@ -35,6 +35,6 @@ jobs:
         SOLARMAN_EMAIL: ${{ secrets.SOLARMAN_EMAIL }}
         SOLARMAN_PASSWORD: ${{ secrets.SOLARMAN_PASSWORD }}
         DEVICE_SN: ${{ secrets.DEVICE_SN }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
         GIST_ID: ${{ secrets.GIST_ID }}
       run: python main.py
