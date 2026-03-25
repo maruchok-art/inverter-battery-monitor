@@ -31,7 +31,7 @@
 
 👉 **[Відкрити дашборд](https://maruchok-art.github.io/inverter-battery-monitor/dashboard.html)**
 
-Показує поточний заряд і статус в реальному часі. Оновлюється кожні 10 хвилин.
+Показує поточний заряд і статус в реальному часі. Оновлюється кожні 10 хвилин автоматично.
 Можна встановити як додаток на телефон через Chrome → "Додати на головний екран".
 
 ---
@@ -41,9 +41,9 @@
 ```
 Інвертор Deye
       ↓ (Deye Cloud API)
-  Python скрипт
+  Python скрипт (main.py)
       ↓ (кожні 10 хв через cron-job.org + GitHub Actions)
-  GitHub Gist (зберігання стану)
+  GitHub Gist (зберігання стану і даних)
       ↓ (при зміні рівня заряду)
   Telegram канал  +  Веб-дашборд
 ```
@@ -55,7 +55,7 @@
 | Компонент | Технологія | Вартість |
 |-----------|-----------|---------|
 | Виконання скрипту | GitHub Actions | Безкоштовно |
-| Розклад запусків | cron-job.org | Безкоштовно |
+| Точний розклад запусків | cron-job.org | Безкоштовно |
 | База даних стану | GitHub Gist | Безкоштовно |
 | Хостинг дашборду | GitHub Pages | Безкоштовно |
 | API інвертора | Deye Cloud | Безкоштовно |
@@ -66,8 +66,8 @@
 
 ## 🔧 Налаштування
 
-### GitHub Secrets
-Додати в Settings → Secrets → Actions:
+### Крок 1 — GitHub Secrets
+Додати в Settings → Secrets and variables → Actions:
 
 ```
 TG_BOT_TOKEN            — токен Telegram бота (@BotFather)
@@ -81,8 +81,8 @@ GIST_ID                 — ID файлу state.json на gist.github.com
 PERSONAL_GITHUB_TOKEN   — особистий токен GitHub з правами gist
 ```
 
-### GitHub Gist
-Створити новий secret gist на [gist.github.com](https://gist.github.com):
+### Крок 2 — GitHub Gist
+Створити новий **secret gist** на [gist.github.com](https://gist.github.com):
 - Назва файлу: `state.json`
 - Вміст:
 ```json
@@ -90,16 +90,19 @@ PERSONAL_GITHUB_TOKEN   — особистий токен GitHub з правам
 ```
 Скопіювати ID з URL і додати в secrets як `GIST_ID`.
 
-### GitHub токен
-Створити особистий токен в Settings → Developer settings → Tokens (classic):
-- Права: `gist` + `workflow`
-- Додати в secrets як `PERSONAL_GITHUB_TOKEN`
+### Крок 3 — GitHub токени
+Потрібно два окремих токени (Settings → Developer settings → Tokens (classic)):
 
-### cron-job.org
+| Токен | Права | Використання |
+|-------|-------|-------------|
+| `cron-job token` | `workflow` | Для cron-job.org — тригер запусків |
+| `PERSONAL_GITHUB_TOKEN` | `gist` | Для скрипту — читання і запис стану |
+
+### Крок 4 — cron-job.org
 Налаштувати завдання для надійного запуску кожні 10 хвилин:
 - **URL:** `https://api.github.com/repos/ТВІЙ_НІК/inverter-battery-monitor/dispatches`
 - **Method:** POST
-- **Headers:** `Authorization: Bearer GITHUB_TOKEN`, `Content-Type: application/json`
+- **Headers:** `Authorization: Bearer CRON_JOB_TOKEN`, `Content-Type: application/json`
 - **Body:** `{"event_type": "trigger"}`
 
 ---
