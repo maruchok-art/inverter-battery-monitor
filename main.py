@@ -16,12 +16,10 @@ SOLARMAN_APP_SECRET = os.environ.get("SOLARMAN_APP_SECRET")
 SOLARMAN_EMAIL = os.environ.get("SOLARMAN_EMAIL")
 SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+GIST_ID = os.environ.get("GIST_ID")
 
 API_URL = "https://eu1-developer.deyecloud.com"
-
-# НАДІЙНА БАЗА ДАНИХ JSONBLOB
-JSONBLOB_ID = os.environ.get("JSONBLOB_ID")
-STORAGE_URL = f"https://jsonblob.com/api/jsonBlob/{JSONBLOB_ID}"
 
 # Час життя токена (12 годин)
 TOKEN_TTL = 43200
@@ -36,31 +34,38 @@ def send_telegram_message(text, silent=False):
         logging.error(f"Помилка відправки в Telegram: {e}")
 
 
-# --- РОБОТА З БАЗОЮ JSONBLOB ---
+# --- РОБОТА З GITHUB GIST ---
 def get_state():
     default_state = {"state": 0, "token": "", "token_time": 0}
     try:
-        res = requests.get(STORAGE_URL, timeout=10)
+        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+        res = requests.get(f"https://api.github.com/gists/{GIST_ID}", headers=headers, timeout=10)
         if res.status_code == 200:
-            data = res.json()
+            content = res.json()["files"]["state.json"]["content"]
+            data = json.loads(content)
             if not data:
                 return default_state
             return data
     except Exception as e:
-        logging.warning(f"Помилка читання JSONBlob: {e}")
+        logging.warning(f"Помилка читання Gist: {e}")
     return default_state
 
 
 def save_state(state_dict):
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json"
+    }
+    payload = {"files": {"state.json": {"content": json.dumps(state_dict)}}}
     for attempt in range(3):
         try:
-            res = requests.put(STORAGE_URL, json=state_dict, headers=headers, timeout=10)
+            res = requests.patch(f"https://api.github.com/gists/{GIST_ID}", headers=headers, json=payload, timeout=10)
             res.raise_for_status()
-            logging.info("Пам'ять бота успішно оновлено та збережено в JSONBlob!")
+            logging.info("Пам'ять бота успішно оновлено та збережено в Gist!")
             return
         except Exception as e:
-            logging.warning(f"Помилка запису в JSONBlob (спроба {attempt+1}/3): {e}")
+            logging.warning(f"Помилка запису в Gist (спроба {attempt+1}/3): {e}")
         time.sleep(3)
     logging.error("КРИТИЧНО: Не вдалося зберегти стан.")
 
@@ -164,9 +169,6 @@ def main():
         msg = (f"✅ <b>Зв'язок з інвертором відновлено!</b>\n\n"
                f"Поточний заряд акумулятора ліфта: <b>{soc}%</b>")
         send_telegram_message(msg)
-
-        # Скидаємо поточний стан на 0, щоб наступний блок міг
-        # надіслати тривогу якщо заряд зараз критично низький
         current_state_level = 0
         state["state"] = 0
 
@@ -206,11 +208,12 @@ def main():
     else:
         logging.info("Стан не змінився. Дій не потрібно.")
 
-    # 4. Зберігаємо завжди
+    # 4. Зберігаємо завжди — щоб не втратити оновлений токен
     if soc != "OFFLINE":
         state["last_soc"] = soc
         state["last_update"] = int(time.time())
     save_state(state)
+
 
 if __name__ == "__main__":
     main()
