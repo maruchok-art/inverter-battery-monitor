@@ -159,7 +159,7 @@ def main():
         new_state = 3
     elif soc <= 50:
         new_state = 2
-    elif soc <= 85:
+    elif soc <= 80:
         new_state = 1
     else:
         new_state = 0
