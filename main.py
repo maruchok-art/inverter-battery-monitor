@@ -231,24 +231,20 @@ def main():
             send_telegram_message(msg)
 
         elif new_tg_state == 5 and current_tg_state < 5:
-            msg = (f"🔴🆘 <b>КРИТИЧНИЙ ЗАРЯД АКУМУЛЯТОРА: {soc}%!</b> 🆘🔴\n\n"
-                   f"Інвертор вимкнеться при 10%.")
+            msg = f"🔴🆘 <b>Критичний заряд акумуляторів: {soc}%</b> — інвертор вимкнеться при 10%."
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 3 and current_tg_state < 3:
-            msg = (f"🔴 ⛔️ <b>НИЗЬКИЙ ЗАРЯД АКУМУЛЯТОРА: {soc}%!</b>")
+            msg = f"🔴 <b>Низький заряд акумуляторів: {soc}%</b>"
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 2 and current_tg_state < 2:
-            msg = (f"🟠 <b>Заряд акумуляторів: {soc}%</b>\n\n"
-                   f"Запас ходу обмежений. Просимо максимально скоротити "
-                   f"використання ліфта і за можливості йти сходами.")
+            msg = f"🟠 <b>Заряд акумуляторів обмежений: {soc}%</b>"
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 1 and current_tg_state < 1:
-            msg = (f"🟡 <b>Увага! Будинок працює від акумуляторів (Заряд: {soc}%).</b>\n\n"
-                   f"Будь ласка, користуйтеся ліфтом лише за крайньої потреби.")
-            send_telegram_message(msg, silent=True)
+            msg = f"🟡 <b>Будинок працює від акумуляторів: {soc}%</b>"
+            send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 0:
             logging.info("Мережа є або батарея заряджена. Стан скинуто на 0 (тихо).")
