@@ -25,6 +25,7 @@ API_URL = "https://eu1-developer.deyecloud.com"
 TOKEN_TTL = 43200
 
 # Мінімальна напруга мережі (В), при якій вважаємо, що мережа є.
+# Беремо з запасом вище за межу відключення інвертора: краще зайва тривога, ніж пропущена.
 GRID_MIN_V = 180
 
 
@@ -126,6 +127,7 @@ def fetch_inverter_data(token):
             return None
 
         # Найменша напруга з трьох фаз. None — якщо інвертор не віддав жодної
+        # (тоді мережу вважаємо невідомою, а не наявною).
         grid_v = min(grid_vs) if grid_vs else None
         return {"soc": soc, "grid_v": grid_v}
     except Exception as e:
@@ -186,9 +188,11 @@ def main():
         )
 
         # --- 1. Логіка для ТЕЛЕГРАМУ ---
-        # Поки мережа є, ліфт живиться від неї, тому тривог за зарядом немає.
+        # Поки мережа є, споживачі живляться від неї, тому тривог за зарядом немає.
         if grid_ok:
             new_tg_state = 0
+        elif soc <= 15:
+            new_tg_state = 5  # дуже критично: інвертор вимикається на 10%
         elif soc <= 30:
             new_tg_state = 3
         elif soc <= 50:
@@ -212,7 +216,7 @@ def main():
     # 3. Якщо були в стані OFFLINE, а зараз отримали реальні дані — повідомляємо про відновлення
     if current_tg_state == 4 and new_tg_state != 4:
         msg = (f"✅ <b>Зв'язок з інвертором відновлено!</b>\n\n"
-               f"Поточний заряд акумулятора ліфта: <b>{soc}%</b>")
+               f"Поточний заряд акумуляторів: <b>{soc}%</b>")
         send_telegram_message(msg)
         current_tg_state = 0
         state["tg_state"] = 0
@@ -221,25 +225,29 @@ def main():
     if new_tg_state != current_tg_state:
 
         if new_tg_state == 4:
-            msg = (f"⚠️ <b>Увага! Втрачено зв'язок з інвертором ліфта.</b>\n\n"
+            msg = (f"⚠️ <b>Увага! Втрачено зв'язок з інвертором.</b>\n\n"
                    f"Дані про заряд не оновлюються (можливо, зник інтернет або живлення роутера). "
-                   f"Будь ласка, будьте обережні з ліфтом!")
+                   f"Актуальний заряд невідомий, тому будьте обережні з ліфтом.")
             send_telegram_message(msg)
 
+        elif new_tg_state == 5 and current_tg_state < 5:
+            msg = (f"🔴🆘 <b>КРИТИЧНИЙ ЗАРЯД АКУМУЛЯТОРА: {soc}%!</b> 🆘🔴\n\n"
+                   f"Інвертор вимкнеться при 10%.")
+            send_telegram_message(msg, silent=False)
+
         elif new_tg_state == 3 and current_tg_state < 3:
-            msg = (f"🔴 ⛔️ <b>КРИТИЧНИЙ ЗАРЯД ({soc}%)! НЕ СІДАЙТЕ В ЛІФТ!</b> ⛔️\n\n"
-                   f"Є високий ризик зупинки кабіни між поверхами.")
+            msg = (f"🔴 ⛔️ <b>НИЗЬКИЙ ЗАРЯД АКУМУЛЯТОРА: {soc}%!</b>")
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 2 and current_tg_state < 2:
-            msg = (f"🟠 <b>Заряд акумулятора ліфта: {soc}%</b>\n\n"
+            msg = (f"🟠 <b>Заряд акумуляторів: {soc}%</b>\n\n"
                    f"Запас ходу обмежений. Просимо максимально скоротити "
                    f"використання ліфта і за можливості йти сходами.")
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 1 and current_tg_state < 1:
-            msg = (f"🟡 <b>Увага! Ліфт працює від акумуляторів (Заряд: {soc}%).</b>\n\n"
-                   f"Будь ласка, користуйтеся ним лише за крайньої потреби. Економте заряд!")
+            msg = (f"🟡 <b>Увага! Будинок працює від акумуляторів (Заряд: {soc}%).</b>\n\n"
+                   f"Будь ласка, користуйтеся ліфтом лише за крайньої потреби.")
             send_telegram_message(msg, silent=True)
 
         elif new_tg_state == 0:
@@ -254,7 +262,7 @@ def main():
         logging.info("Стан Telegram не змінився. Дій не потрібно.")
 
     # 5. Зберігаємо завжди — щоб не втратити оновлений токен і дати дані для Дашборда
-    state["state"] = dash_state
+    state["state"] = dash_state  # Дашборд читає саме цей ключ!
     if inverter_data != "OFFLINE":
         state["last_soc"] = soc
         state["last_update"] = int(time.time())
