@@ -231,19 +231,19 @@ def main():
             send_telegram_message(msg)
 
         elif new_tg_state == 5 and current_tg_state < 5:
-            msg = f"🔴🆘 <b>Критичний заряд акумуляторів: {soc}%</b> — інвертор вимкнеться при 10%."
+            msg = f"🔴🆘 <b>Критичний заряд акумуляторів: (Заряд: {soc}%)</b> — інвертор вимкнеться при 10%."
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 3 and current_tg_state < 3:
-            msg = f"🔴 <b>Низький заряд акумуляторів: {soc}%</b>"
+            msg = f"🔴 <b>Низький заряд акумуляторів: (Заряд: {soc}%)</b>"
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 2 and current_tg_state < 2:
-            msg = f"🟠 <b>Заряд акумуляторів обмежений: {soc}%</b>"
+            msg = f"🟠 <b>Заряд акумуляторів обмежений: (Заряд: {soc}%)</b>"
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 1 and current_tg_state < 1:
-            msg = f"🟡 <b>Будинок працює від акумуляторів: {soc}%</b>"
+            msg = f"🟡 <b>Будинок працює від акумуляторів: (Заряд: {soc}%)</b>"
             send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 0:
