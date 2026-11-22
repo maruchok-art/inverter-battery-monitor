@@ -1,9 +1,7 @@
 name: Check Elevator Battery
 
 on:
-  schedule:
-    # Запасний запуск кожні 10 хвилин (основний — через cron-job.org)
-    - cron: '*/10 * * * *'
+  # Запускає cron-job.org кожні 10 хвилин (розклад самого GitHub ненадійний)
   workflow_dispatch: # Дозволяє запустити скрипт вручну кнопкою
   repository_dispatch:
     types: [trigger]
