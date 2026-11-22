@@ -2,26 +2,32 @@ name: Check Elevator Battery
 
 on:
   schedule:
-    # Запуск кожні 10 хвилин
+    # Запасний запуск кожні 10 хвилин (основний — через cron-job.org)
     - cron: '*/10 * * * *'
   workflow_dispatch: # Дозволяє запустити скрипт вручну кнопкою
   repository_dispatch:
     types: [trigger]
 
+# Не дозволяємо двом запускам працювати одночасно (інакше можливі дублі повідомлень).
+# Якщо новий запуск прийде, поки старий ще працює, — він почекає своєї черги.
+concurrency:
+  group: elevator-bot
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    # Якщо щось зависло — зупиняємо через 5 хвилин (зазвичай запуск триває ~20 секунд)
+    timeout-minutes: 5
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
-        python-version: '3.10'
+        python-version: '3.12'
 
     - name: Install dependencies
       run: pip install requests
