@@ -149,7 +149,10 @@
 
 <script>
 const GIST_ID = "2c33101cb8478dde59acc26e25faf9b1";
-const URL = `https://api.github.com/gists/${GIST_ID}`;
+const GIST_URL = `https://api.github.com/gists/${GIST_ID}`;
+
+// Якщо дані старші за стільки хвилин — попереджаємо мешканців, що бот, можливо, не працює
+const STALE_MINUTES = 30;
 
 const STATES = {
   0: { label: "✅ Мережа, все добре",   cls: "status-ok",     color: "#4ade80" },
@@ -165,7 +168,7 @@ async function loadData() {
   btn.disabled = true;
   document.getElementById("error").textContent = "";
   try {
-    const res = await fetch(`${URL}?nocache=${new Date().getTime()}`);
+    const res = await fetch(`${GIST_URL}?nocache=${new Date().getTime()}`);
     if (!res.ok) throw new Error("HTTP " + res.status);
     const gist = await res.json();
     const data = JSON.parse(gist.files["state.json"].content);
@@ -174,6 +177,8 @@ async function loadData() {
     const st    = data.state ?? 0;
     const ts    = data.last_update ?? null;
     const info  = STATES[st] ?? STATES[0];
+    const stale = ts !== null && st !== 4 &&
+                  (Date.now() / 1000 - ts) > STALE_MINUTES * 60;
 
     // SOC відсоток
     const socEl = document.getElementById("soc-value");
@@ -183,7 +188,7 @@ async function loadData() {
       const circumference = 465;
       const offset = circumference - (soc / 100) * circumference;
       ring.style.strokeDashoffset = offset;
-      ring.style.stroke = info.color;
+      ring.style.stroke = stale ? "#9ca3af" : info.color;
     } else {
       socEl.textContent = "—";
       ring.style.strokeDashoffset = 465;
@@ -198,8 +203,13 @@ async function loadData() {
       currentLabel = "⚡ Мережа (Заряджається)";
     }
     
+    // Дані давно не оновлювались — не показуємо "все добре", а попереджаємо
+    if (stale) {
+      currentLabel = "⚠️ Дані давно не оновлювались";
+    }
+
     badge.textContent = currentLabel;
-    badge.className = "status-badge " + info.cls;
+    badge.className = "status-badge " + (stale ? "status-offline" : info.cls);
 
     // Час оновлення
     if (ts) {
