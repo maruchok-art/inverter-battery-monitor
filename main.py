@@ -21,26 +21,39 @@ GIST_ID = os.environ.get("GIST_ID")
 
 API_URL = "https://eu1-developer.deyecloud.com"
 
-# Час життя токена (12 годин)
-TOKEN_TTL = 43200
-
 # Мінімальна напруга мережі (В), при якій вважаємо, що мережа є.
 # Беремо з запасом вище за межу відключення інвертора: краще зайва тривога, ніж пропущена.
 GRID_MIN_V = 180
 
+# Скільки запусків поспіль мережа має бути в нормі, щоб скинути тривоги в Telegram.
+# Захищає від повторних повідомлень, коли напруга "скаче" біля порогу.
+GRID_OK_RUNS_TO_RESET = 2
+
+# Скільки запусків поспіль Deye має не відповідати, щоб повідомити "втрачено зв'язок".
+# Захищає від хибних тривог через разовий збій хмари Deye.
+API_FAILS_TO_ALERT = 2
+
 
 def send_telegram_message(text, silent=False):
+    """Надсилає повідомлення. Повертає True, тільки якщо Telegram його прийняв."""
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML", "disable_notification": silent}
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        logging.error(f"Помилка відправки в Telegram: {e}")
+    for attempt in range(3):
+        try:
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code == 200:
+                return True
+            logging.warning(f"Telegram відповів кодом {res.status_code} (спроба {attempt+1}/3)")
+        except Exception as e:
+            logging.warning(f"Помилка відправки в Telegram (спроба {attempt+1}/3): {e}")
+        time.sleep(3)
+    logging.error("Не вдалося надіслати повідомлення в Telegram. Спробуємо наступного запуску.")
+    return False
 
 
 # --- РОБОТА З GITHUB GIST ---
 def get_state():
-    default_state = {"state": 0, "tg_state": 0, "token": "", "token_time": 0}
+    default_state = {"state": 0, "tg_state": 0}
     try:
         headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
         res = requests.get(f"https://api.github.com/gists/{GIST_ID}", headers=headers, timeout=10)
@@ -56,6 +69,11 @@ def get_state():
 
 
 def save_state(state_dict):
+    # Ключ Deye ніколи не зберігаємо: файл стану публічно читається дашбордом.
+    # (Ці рядки також прибирають старий ключ, який лишився з попередньої версії.)
+    state_dict.pop("token", None)
+    state_dict.pop("token_time", None)
+
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
@@ -116,7 +134,8 @@ def fetch_inverter_data(token):
         for item in device_data.get("dataList", []):
             key = str(item.get("key", "")).upper()
             if key in ["SOC", "BATTERY_SOC", "BMS_SOC"]:
-                soc = float(item.get("value", 100))
+                # Ціле число, щоб у повідомленнях було "85%", а не "85.0%"
+                soc = round(float(item.get("value", 100)))
             elif key in ["GRIDVOLTAGEL1", "GRIDVOLTAGEL2", "GRIDVOLTAGEL3"]:
                 try:
                     grid_vs.append(float(item.get("value", 0)))
@@ -135,23 +154,22 @@ def fetch_inverter_data(token):
         return None
 
 
-def get_inverter_data_with_retry(state, max_retries=3, delay=15):
+def get_inverter_data_with_retry(max_retries=3, delay=15):
+    """Повертає дані, або "OFFLINE" (Deye каже: інвертор не на зв'язку),
+    або "API_ERROR" (не вдалося отримати відповідь від хмари Deye)."""
+    # Ключ доступу Deye беремо новий на кожному запуску.
+    # Він живе тільки під час цього запуску і НІДЕ не зберігається.
+    token = ""
     for attempt in range(max_retries):
-        token = state.get("token", "")
-        token_time = state.get("token_time", 0)
-
-        if not token or (time.time() - token_time) > TOKEN_TTL:
+        if not token:
             logging.info("Отримуємо новий токен...")
             token = fetch_new_token()
-            if token:
-                state["token"] = token
-                state["token_time"] = time.time()
 
         if token:
             data = fetch_inverter_data(token)
             if data == "AUTH_ERROR":
                 logging.info("Токен відхилено. Оновлюємо...")
-                state["token"] = ""
+                token = ""
                 continue
             elif data == "OFFLINE":
                 return "OFFLINE"
@@ -162,7 +180,7 @@ def get_inverter_data_with_retry(state, max_retries=3, delay=15):
         if attempt < max_retries - 1:
             time.sleep(delay)
 
-    return "OFFLINE"
+    return "API_ERROR"
 
 
 # --- ГОЛОВНА ЛОГІКА ---
@@ -171,7 +189,20 @@ def main():
     # Міграція: якщо tg_state ще немає в пам'яті, беремо старе значення state
     current_tg_state = state.get("tg_state", state.get("state", 0))
 
-    inverter_data = get_inverter_data_with_retry(state)
+    inverter_data = get_inverter_data_with_retry()
+
+    # 0. Разовий збій хмари Deye — ще не привід лякати мешканців.
+    if inverter_data == "API_ERROR":
+        fails = state.get("api_fails", 0) + 1
+        state["api_fails"] = fails
+        if fails < API_FAILS_TO_ALERT:
+            logging.warning(f"Deye не відповів ({fails} раз поспіль). Нічого не змінюємо, чекаємо наступного запуску.")
+            save_state(state)
+            return
+        logging.warning(f"Deye не відповідає {fails} рази поспіль. Вважаємо, що зв'язку немає.")
+        inverter_data = "OFFLINE"
+    else:
+        state["api_fails"] = 0
 
     if inverter_data == "OFFLINE":
         soc = state.get("last_soc", "Невідомо")
@@ -182,6 +213,11 @@ def main():
         soc = inverter_data["soc"]
         grid_v = inverter_data["grid_v"]
         grid_ok = grid_v is not None and grid_v >= GRID_MIN_V
+
+        # Рахуємо, скільки запусків поспіль мережа в нормі
+        grid_ok_runs = state.get("grid_ok_runs", 0) + 1 if grid_ok else 0
+        state["grid_ok_runs"] = grid_ok_runs
+
         logging.info(
             f"SOC: {soc}%, Мін. напруга мережі: {grid_v}V "
             f"(мережа {'є' if grid_ok else 'немає або невідомо'}), Тривога TG: {current_tg_state}"
@@ -190,7 +226,12 @@ def main():
         # --- 1. Логіка для ТЕЛЕГРАМУ ---
         # Поки мережа є, споживачі живляться від неї, тому тривог за зарядом немає.
         if grid_ok:
-            new_tg_state = 0
+            if grid_ok_runs >= GRID_OK_RUNS_TO_RESET or current_tg_state in (0, 4):
+                new_tg_state = 0
+            else:
+                # Світло щойно повернулось — чекаємо ще один запуск, щоб переконатися,
+                # що воно не зникне знову (інакше буде повторне повідомлення).
+                new_tg_state = current_tg_state
         elif soc <= 15:
             new_tg_state = 5  # дуже критично: інвертор вимикається на 10%
         elif soc <= 30:
@@ -202,7 +243,7 @@ def main():
         else:
             new_tg_state = 0
 
-        # --- 2. Логіка для ДАШБОРДА (відображає реальну напругу) ---
+        # --- 2. Логіка для ДАШБОРДА (відображає реальну напругу, без затримок) ---
         if grid_ok:  # Світло є
             dash_state = 0
         else:  # Світла немає
@@ -217,34 +258,37 @@ def main():
     if current_tg_state == 4 and new_tg_state != 4:
         msg = (f"✅ <b>Зв'язок з інвертором відновлено!</b>\n\n"
                f"Поточний заряд акумуляторів: <b>{soc}%</b>")
-        send_telegram_message(msg)
-        current_tg_state = 0
-        state["tg_state"] = 0
+        if send_telegram_message(msg):
+            current_tg_state = 0
+            state["tg_state"] = 0
+        else:
+            new_tg_state = 4  # не дійшло — спробуємо ще раз наступного запуску
 
     # 4. Якщо стан змінився — реагуємо
     if new_tg_state != current_tg_state:
+        sent = True  # якщо повідомлення не потрібне, вважаємо, що все гаразд
 
         if new_tg_state == 4:
             msg = (f"⚠️ <b>Увага! Втрачено зв'язок з інвертором.</b>\n\n"
                    f"Дані про заряд не оновлюються (можливо, зник інтернет або живлення роутера). "
                    f"Актуальний заряд невідомий, тому будьте обережні з ліфтом.")
-            send_telegram_message(msg)
+            sent = send_telegram_message(msg)
 
         elif new_tg_state == 5 and current_tg_state < 5:
             msg = f"🔴🆘 <b>Критичний заряд акумуляторів: (Заряд: {soc}%)</b> — інвертор вимкнеться при 10%."
-            send_telegram_message(msg, silent=False)
+            sent = send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 3 and current_tg_state < 3:
             msg = f"🔴 <b>Низький заряд акумуляторів: (Заряд: {soc}%)</b>"
-            send_telegram_message(msg, silent=False)
+            sent = send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 2 and current_tg_state < 2:
             msg = f"🟠 <b>Заряд акумуляторів обмежений: (Заряд: {soc}%)</b>"
-            send_telegram_message(msg, silent=False)
+            sent = send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 1 and current_tg_state < 1:
             msg = f"🟡 <b>Будинок працює від акумуляторів: (Заряд: {soc}%)</b>"
-            send_telegram_message(msg, silent=False)
+            sent = send_telegram_message(msg, silent=False)
 
         elif new_tg_state == 0:
             logging.info("Мережа є або батарея заряджена. Стан скинуто на 0 (тихо).")
@@ -252,12 +296,15 @@ def main():
         else:
             logging.info(f"Батарея заряджається. Тихий перехід стану: {current_tg_state} -> {new_tg_state}")
 
-        state["tg_state"] = new_tg_state
+        # Запам'ятовуємо новий рівень, тільки якщо повідомлення справді дійшло.
+        # Інакше наступний запуск спробує надіслати його знову.
+        if sent:
+            state["tg_state"] = new_tg_state
 
     else:
         logging.info("Стан Telegram не змінився. Дій не потрібно.")
 
-    # 5. Зберігаємо завжди — щоб не втратити оновлений токен і дати дані для Дашборда
+    # 5. Зберігаємо завжди — щоб дати дані для Дашборда
     state["state"] = dash_state  # Дашборд читає саме цей ключ!
     if inverter_data != "OFFLINE":
         state["last_soc"] = soc
