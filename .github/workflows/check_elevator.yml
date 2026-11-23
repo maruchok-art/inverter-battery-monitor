@@ -41,4 +41,5 @@ jobs:
         DEVICE_SN: ${{ secrets.DEVICE_SN }}
         GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
         GIST_ID: ${{ secrets.GIST_ID }}
+        TOKEN_GIST_ID: ${{ secrets.TOKEN_GIST_ID }}
       run: python main.py
