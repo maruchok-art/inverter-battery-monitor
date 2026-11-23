@@ -18,8 +18,13 @@ SOLARMAN_PASSWORD = os.environ.get("SOLARMAN_PASSWORD")
 DEVICE_SN = os.environ.get("DEVICE_SN")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 GIST_ID = os.environ.get("GIST_ID")
+# Окремий ПРИХОВАНИЙ Gist лише для ключа Deye. Його адреса є тільки в секретах GitHub.
+TOKEN_GIST_ID = os.environ.get("TOKEN_GIST_ID")
 
 API_URL = "https://eu1-developer.deyecloud.com"
+
+# Як часто брати в Deye новий ключ (12 годин). Між цим ключ береться з прихованого Gist.
+TOKEN_TTL = 43200
 
 # Мінімальна напруга мережі (В), при якій вважаємо, що мережа є.
 # Беремо з запасом вище за межу відключення інвертора: краще зайва тривога, ніж пропущена.
@@ -92,6 +97,46 @@ def save_state(state_dict):
     logging.error("КРИТИЧНО: Не вдалося зберегти стан.")
 
 
+# --- ЗБЕРІГАННЯ КЛЮЧА DEYE В ПРИХОВАНОМУ GIST ---
+def load_cached_token():
+    """Повертає збережений ключ, якщо він ще свіжий, інакше порожній рядок."""
+    if not TOKEN_GIST_ID:
+        return ""
+    try:
+        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+        res = requests.get(f"https://api.github.com/gists/{TOKEN_GIST_ID}", headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = json.loads(res.json()["files"]["token.json"]["content"] or "{}")
+            token = data.get("token", "")
+            age = time.time() - data.get("token_time", 0)
+            if token and age < TOKEN_TTL:
+                logging.info(f"Беремо збережений ключ Deye (вік {int(age // 60)} хв).")
+                return token
+        else:
+            logging.warning(f"Не вдалося прочитати Gist з ключем (код {res.status_code}).")
+    except Exception as e:
+        logging.warning(f"Помилка читання Gist з ключем: {e}")
+    return ""
+
+
+def save_cached_token(token):
+    """Зберігає новий ключ у прихований Gist (не в публічний файл стану!)."""
+    if not TOKEN_GIST_ID or not token:
+        return
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json"
+    }
+    payload = {"files": {"token.json": {"content": json.dumps({"token": token, "token_time": int(time.time())})}}}
+    try:
+        res = requests.patch(f"https://api.github.com/gists/{TOKEN_GIST_ID}", headers=headers, json=payload, timeout=10)
+        res.raise_for_status()
+        logging.info("Новий ключ Deye збережено в прихованому Gist.")
+    except Exception as e:
+        logging.warning(f"Не вдалося зберегти ключ у прихований Gist: {e}")
+
+
 # --- ЛОГІКА API DEYE ---
 def fetch_new_token():
     if not SOLARMAN_PASSWORD:
@@ -157,13 +202,15 @@ def fetch_inverter_data(token):
 def get_inverter_data_with_retry(max_retries=3, delay=15):
     """Повертає дані, або "OFFLINE" (Deye каже: інвертор не на зв'язку),
     або "API_ERROR" (не вдалося отримати відповідь від хмари Deye)."""
-    # Ключ доступу Deye беремо новий на кожному запуску.
-    # Він живе тільки під час цього запуску і НІДЕ не зберігається.
-    token = ""
+    # Спершу пробуємо збережений ключ (з прихованого Gist). Новий у Deye беремо,
+    # лише якщо збереженого немає, він старший за 12 годин або Deye його відхилив.
+    # Якщо TOKEN_GIST_ID не налаштовано — просто беремо новий ключ на кожному запуску.
+    token = load_cached_token()
     for attempt in range(max_retries):
         if not token:
             logging.info("Отримуємо новий токен...")
             token = fetch_new_token()
+            save_cached_token(token)
 
         if token:
             data = fetch_inverter_data(token)
