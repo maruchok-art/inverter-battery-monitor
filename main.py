@@ -335,7 +335,7 @@ def main():
 
         elif new_tg_state == 1 and current_tg_state < 1:
             msg = f"🟡 <b>Будинок працює від акумуляторів: (Заряд: {soc}%)</b>"
-            sent = send_telegram_message(msg, silent=False)
+            sent = send_telegram_message(msg, silent=True)
 
         elif new_tg_state == 0:
             logging.info("Мережа є або батарея заряджена. Стан скинуто на 0 (тихо).")
